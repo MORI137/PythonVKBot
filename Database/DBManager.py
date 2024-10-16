@@ -47,6 +47,43 @@ class DBManager:
 
             await db.commit()
 
+    async def remove_user(self, user_id):
+        async with aiosqlite.connect(db_path) as db:
+            # Проверяем, существует ли пользователь с таким user_id
+            query_check = "SELECT * FROM users WHERE user_feed_id = ?"
+            cursor = await db.execute(query_check, (user_id,))
+            exists = await cursor.fetchone()
+
+            if exists != None and exists:
+                remove_query = """DELETE FROM users WHERE user_id = ?"""
+                await db.execute(remove_query, (user_id,))
+                await db.commit()
+
+
+    async def confirm_user(self, user_id):
+        async with aiosqlite.connect(db_path) as db:
+            # Проверяем, существует ли пользователь с таким user_id
+            query_check = "SELECT * FROM users WHERE user_feed_id = ?"
+            cursor = await db.execute(query_check, (user_id,))
+            exists = await cursor.fetchone()
+
+            if exists != None and exists:
+                confirm_query = """UPDATE users SET is_confirmed = ? WHERE user_id = ?"""
+                await db.execute(confirm_query, (True, user_id,))
+                await db.commit()
+
+    async def change_user_group(self, user_id, group_name):
+        async with aiosqlite.connect(db_path) as db:
+            # Проверяем, существует ли пользователь с таким user_id
+            query_check = "SELECT * FROM users WHERE user_feed_id = ?"
+            cursor = await db.execute(query_check, (user_id,))
+            exists = await cursor.fetchone()
+
+            if exists != None and exists:
+                update_query = """UPDATE users SET group_name = ? WHERE user_id = ?"""
+                await db.execute(update_query, (group_name, user_id,))
+                await db.commit()
+
     async def get_all_users(self):
         async with aiosqlite.connect(db_path) as db:
             cursor = await db.execute("SELECT * FROM users")
