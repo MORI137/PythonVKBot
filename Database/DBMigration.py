@@ -20,7 +20,6 @@ cursor.execute('''
         admin_message_id INTEGER,
         admin_feed_id INTEGER,
         message_type TEXT,
-        parent INTEGER,
         PRIMARY KEY (admin_message_id, admin_feed_id)
     )
 ''')
@@ -31,11 +30,23 @@ cursor.execute('''
         user_message_id INTEGER,
         user_feed_id INTEGER,
         message_type TEXT,
+        user_message_reply_id INTEGER DEFAULT NULL,
         PRIMARY KEY (user_message_id, user_feed_id),
         FOREIGN KEY (user_feed_id) REFERENCES users(user_feed_id)
             ON DELETE CASCADE ON UPDATE CASCADE
     )
 ''')
+
+'''
+CREATE TABLE IF NOT EXISTS messages (
+    peer_id INTEGER NOT NULL,
+    message_id INTEGER NOT NULL,
+    message_type TEXT,
+    reply_message_id INTEGER DEFAULT NULL,
+    PRIMARY KEY (message_id),
+    )
+'''
+#+ создать триггер, который будет удалять все сообщения при удалении пользователя где peer_id совпадает
 
 # Создание таблицы 'admin_user_message'
 cursor.execute('''

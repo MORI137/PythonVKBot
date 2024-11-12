@@ -9,11 +9,11 @@ class MessageHandler:
     def __init__(self, bot: Bot):
         self.bot = bot
         self.db = DBManager()
-        self.admin_message_handler = AdminMessageHandler(bot, self.db)
-        self.admin_message_handler.init()
-        self.admin_reply_message_handler = AdminReplyMessageHandler(bot, self.db)
 
+        self.admin_message_handler = AdminMessageHandler(bot, self.db)
         self.user_message_handler = UserMessageHandler(bot, self.db)
+
+        self.admin_reply_message_handler = AdminReplyMessageHandler(bot, self.db)
         self.user_reply_message_handler = UserReplyMessageHandler(bot, self.db)
 
         self._register_handlers()

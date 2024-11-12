@@ -1,3 +1,5 @@
+from datetime import datetime
+from vkbottle_types.codegen.objects import UsersFields
 from Database.DBManager import DBManager
 from vkbottle.bot import Bot, Message
 from vkbottle import Keyboard, Text, KeyboardButtonColor
@@ -7,10 +9,6 @@ class AdminMessageHandler:
     def __init__(self, bot: Bot, db: DBManager):
         self.bot = bot
         self.db = db
-        self.main_admin = None
-
-    async def init(self):
-        self.main_admin = await self.db.get_main_admin()
 
     async def admin_command(self, message: Message):
         command_map = {
@@ -18,62 +16,77 @@ class AdminMessageHandler:
             "Воздушная тревога": self.handle_emergency_alert,
             "Отправить сообщение": self.handle_send_message,
             "Помощь": self.handle_help,
-            "Старосты": self.handle_stars,
+            "Старосты": self.handle_group_leader,
         }
 
         command = message.text
         if command in command_map:
             await command_map[command](message)
         else:
-            await message.answer("Неизвестная команда. Пожалуйста, выберите действие из клавиатуры.",
+            await message.answer("🤖Неизвестная команда. Пожалуйста, выберите действие из клавиатуры.",
                                  keyboard=self.create_keyboard())
 
     async def handle_start(self, message):
         await message.answer("Старт", keyboard=self.create_keyboard())
 
-    async def handle_emergency_alert(self, message):
-        users = await self.db.get_all_users()
+    async def handle_emergency_alert(self, message: Message):
+        users = await self.db.get_all_users(True)
+        user_data = []
 
-        await message.answer("Сообщение о воздушной тревоге отправлено")
+        for user in users:
+            user_feed_id = user[0]
+
+            message_id = await self.bot.api.messages.send(
+                peer_id=user_feed_id,
+                message="🚨🚨🚨Внимание всем. Воздушная тревога.",
+                random_id=0
+            )
+            print((user_feed_id, message_id))
+            user_data.append((user_feed_id, message_id))
+            print(user_data)
+
+        admin_message_id = await message.answer("🤖Сообщение о воздушной тревоге отправлено")
+        await self.db.add_admin_user_message(admin_message_id.message_id,
+                                             "воздушная тревога",
+                                             user_data,
+                                             'воздушная тревога')
 
 
+    async def handle_send_message(self, message: Message):
+        users = await self.db.get_all_users(True)
 
-    async def handle_send_message(self, message):
-        await message.answer("Введите сообщение для отправки всем:")
-        # Здесь можно добавить логику для отправки сообщения всем
+        message_text = '🤖Выберите группы/курсы\n' + self.group_by_course(users)
+
+        sent_message = await message.answer(message_text)
+        await self.db.add_admin_message(sent_message.message_id, 'отправить сообщение')
 
     async def handle_help(self, message):
         await message.answer("Помощь")
-        # Здесь можно добавить дополнительную информацию о помощи
 
-    async def handle_stars(self, message):
-        await message.answer("Информация о старостах...")
+    async def handle_group_leader(self, message: Message):
+        users = await self.db.get_all_users()
+        user_ids = [user[0] for user in users]
 
-    async def add_admin_command(self, message: Message):
-        if message.from_id != self.main_admin:
-            await message.answer("У вас нет прав для добавления администраторов.")
-            return
+        response = await self.bot.api.users.get(user_ids=user_ids, fields=[UsersFields.FIRST_NAME_NOM, UsersFields.LAST_NAME_NOM])
+        user_details = {user.id: f"{user.last_name} {user.first_name}" for user in response}
+        merged_data = []
 
-        user_id = message.text.split()[1]
-        try:
-            user_id = int(user_id)
-            await self.db.add_admin(user_id)
-            await message.answer(f"Пользователь {user_id} добавлен как администратор.")
-        except (ValueError, IndexError):
-            await message.answer("Пожалуйста, укажите корректный ID пользователя.")
+        for index, user in enumerate(users, start=0):
+            user_id = user[0]
+            group_name = user[1]
+            is_confirmed = user[2]
 
-    async def remove_admin_command(self, message: Message):
-        if message.from_id != self.main_admin:
-            await message.answer("У вас нет прав для удаления администраторов.")
-            return
+            full_name = user_details.get(user_id, "Неизвестный пользователь")
 
-        user_id = message.text.split()[1]
-        try:
-            user_id = int(user_id)
-            await self.db.remove_admin(user_id)
-            await message.answer(f"Пользователь {user_id} удален из администраторов.")
-        except (ValueError, IndexError):
-            await message.answer("Пожалуйста, укажите корректный ID пользователя.")
+            if is_confirmed:
+                merged_data.append(f"{index+1}. {group_name} {full_name} {user_id}")  # Без статуса
+            else:
+                merged_data.append(f"{index+1}. {group_name} {full_name} {user_id} Не подтвержден")
+
+        merged_data_string = "\n".join(merged_data)
+        sent_message = await message.answer('🤖\n'+ merged_data_string)
+        await self.db.add_admin_message(sent_message.message_id, 'старосты')
+
 
     def create_keyboard(self):
         keyboard = Keyboard(one_time=False)
@@ -83,7 +96,45 @@ class AdminMessageHandler:
         keyboard.add(Text("Отправить сообщение"), color=KeyboardButtonColor.PRIMARY)
         keyboard.row()
         keyboard.add(Text("Старосты"), color=KeyboardButtonColor.POSITIVE)
-        #keyboard.row()
         keyboard.add(Text("Помощь"), color=KeyboardButtonColor.SECONDARY)
 
         return keyboard
+
+    def group_by_course(self, users):
+        current_year = datetime.now().year
+        current_month = datetime.now().month
+
+        # Функция для вычисления курса
+        def calculate_course(group_year):
+            if current_month <= 8:
+                return current_year - group_year
+            else:
+                return current_year - group_year + 1
+
+        groups = sorted(set([user[1] for user in users]))
+
+        groups_by_course = {}
+        for group in groups:
+            # Извлекаем курс: последние две цифры до "о"
+            group_year = 2000 + int(group.split('-')[1])
+            course = calculate_course(group_year)
+            if course not in groups_by_course:
+                groups_by_course[course] = []
+            groups_by_course[course].append(group)
+
+        # Формируем текст вывода
+        message_text = ""
+        counter = 1
+        for course in sorted(groups_by_course.keys()):
+            message_text += f"{course} курс\n"
+            course_groups = groups_by_course[course]
+
+            for i in range(0, len(course_groups), 2):
+                if i + 1 < len(course_groups):
+                    message_text += f"{counter}. {course_groups[i]}  {counter + 1}. {course_groups[i + 1]}\n"
+                    counter += 2
+                else:
+                    message_text += f"{counter}. {course_groups[i]}\n"
+                    counter += 1
+
+        return message_text.strip()
